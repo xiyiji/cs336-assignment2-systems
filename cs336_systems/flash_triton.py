@@ -138,8 +138,8 @@ if HAS_TRITON:
 
         o = o / l[:, None]
         L_val = m + tl.log(l)
-        tl.store(O_block_ptr, o.to(O_block_ptr.type.element_ty), boundary_check=(0,))
-        tl.store(L_block_ptr, L_val.to(L_block_ptr.type.element_ty), boundary_check=(0,))
+        tl.store(O_block_ptr, o.to(q.dtype), boundary_check=(0,))  # O has Q's dtype
+        tl.store(L_block_ptr, L_val, boundary_check=(0,))  # L is fp32
 
     @triton.jit
     def flash_bwd_dkdv_kernel(
@@ -235,8 +235,8 @@ if HAS_TRITON:
             D_block_ptr = tl.advance(D_block_ptr, (Q_TILE_SIZE,))
 
         dk = dk * scale
-        tl.store(dK_block_ptr, dk.to(dK_block_ptr.type.element_ty), boundary_check=(0,))
-        tl.store(dV_block_ptr, dv.to(dV_block_ptr.type.element_ty), boundary_check=(0,))
+        tl.store(dK_block_ptr, dk.to(k.dtype), boundary_check=(0,))
+        tl.store(dV_block_ptr, dv.to(v.dtype), boundary_check=(0,))
 
     @triton.jit
     def flash_bwd_dq_kernel(
@@ -319,7 +319,7 @@ if HAS_TRITON:
             V_block_ptr = tl.advance(V_block_ptr, (K_TILE_SIZE, 0))
 
         dq = dq * scale
-        tl.store(dQ_block_ptr, dq.to(dQ_block_ptr.type.element_ty), boundary_check=(0,))
+        tl.store(dQ_block_ptr, dq.to(q.dtype), boundary_check=(0,))
 
 
 def _pick_tile(n: int, preferred: int) -> int:

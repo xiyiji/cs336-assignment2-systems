@@ -2,8 +2,8 @@
 
 Design
 ------
-* Every ``Linear`` / ``Embedding`` weight (from ``cs336_basics`` or ``torch.nn``)
-  is flattened, zero-padded to a multiple of ``world_size`` and split into
+* Every ``Linear`` / ``Embedding`` weight (from ``cs336_basics`` or ``torch.nn``,
+  or any module with a class attribute ``fsdp_shard_weight = True``) is flattened, zero-padded to a multiple of ``world_size`` and split into
   equal 1-D shards. The *same* ``nn.Parameter`` object keeps living in the
   module, with ``param.data`` replaced by the local shard, so ``named_parameters``
   keeps its names and any optimizer sees only the shard.
@@ -93,7 +93,7 @@ class FSDP(nn.Module):
         self._unit_by_param: dict[int, _ShardUnit] = {}
         shardable = _shardable_types()
         for mod_name, mod in module.named_modules():
-            if not isinstance(mod, shardable):
+            if not (isinstance(mod, shardable) or getattr(mod, "fsdp_shard_weight", False)):
                 continue
             weight = getattr(mod, "weight", None)
             if not isinstance(weight, nn.Parameter) or id(weight) in self._unit_by_param:

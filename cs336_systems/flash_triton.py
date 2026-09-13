@@ -23,7 +23,7 @@ import math
 import torch
 from torch import Tensor
 
-from cs336_systems.flash_attention import MASK_VALUE, _flatten_batch, get_flash_backward
+from cs336_systems.flash_attention import MASK_VALUE, _common_dtype, _flatten_batch, get_flash_backward
 
 try:  # pragma: no cover - exercised only where Triton is installed
     import triton
@@ -407,6 +407,9 @@ class FlashAttentionTriton(torch.autograd.Function):
     def forward(ctx, Q: Tensor, K: Tensor, V: Tensor, is_causal: bool = False) -> Tensor:
         _require_triton()
         batch_shape = Q.shape[:-2]
+        ctx.input_dtypes = (Q.dtype, K.dtype, V.dtype)
+        dtype = _common_dtype(Q, K, V)
+        Q, K, V = (t.to(dtype) for t in (Q, K, V))
         Qf, Kf, Vf = (_flatten_batch(t).contiguous() for t in (Q, K, V))
         q_tile = _pick_tile(Qf.shape[-2], FlashAttentionTriton.Q_TILE_SIZE)
         k_tile = _pick_tile(Kf.shape[-2], FlashAttentionTriton.K_TILE_SIZE)
@@ -427,7 +430,7 @@ class FlashAttentionTriton(torch.autograd.Function):
             _flatten_batch(K).contiguous(),
             _flatten_batch(V).contiguous(),
             _flatten_batch(O).contiguous(),
-            _flatten_batch(dO).contiguous(),
+            _flatten_batch(dO.to(Q.dtype)).contiguous(),
             L.reshape(-1, n_q).contiguous(),
             ctx.is_causal,
         )
@@ -435,7 +438,8 @@ class FlashAttentionTriton(torch.autograd.Function):
             dQ, dK, dV = flash_backward_triton(*args, *ctx.tiles)
         else:
             dQ, dK, dV = get_flash_backward(Q.device)(*args)
-        return dQ.reshape(Q.shape), dK.reshape(K.shape), dV.reshape(V.shape), None
+        dq_t, dk_t, dv_t = ctx.input_dtypes
+        return dQ.reshape(Q.shape).to(dq_t), dK.reshape(K.shape).to(dk_t), dV.reshape(V.shape).to(dv_t), None
 
 
 def flash_attention_triton(Q: Tensor, K: Tensor, V: Tensor, is_causal: bool = False) -> Tensor:

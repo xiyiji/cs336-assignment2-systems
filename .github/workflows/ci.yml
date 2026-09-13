@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx ruff@0.15.10 check cs336_systems tests scripts
+
+  cpu-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install (CPU torch wheel to keep the job small)
+        run: |
+          uv venv
+          uv pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e ./cs336-basics -e . pytest
+      - name: Official + extra tests (CPU, gloo)
+        run: uv run --no-sync pytest tests -q -p no:cacheprovider --junitxml=test_results.xml
+      - name: Compiled flash backward path
+        run: CS336_TEST_COMPILED_BACKWARD=1 uv run --no-sync pytest tests/test_extra_flash.py -k compiled_backward -q -p no:cacheprovider
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test_results.xml
+
+  triton-interpreter:
+    # Validates the Triton kernels' logic on a CPU runner via TRITON_INTERPRET=1.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: |
+          uv venv
+          uv pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e ./cs336-basics -e . pytest triton
+      - run: TRITON_INTERPRET=1 uv run --no-sync pytest tests/test_extra_flash.py -k triton -q -p no:cacheprovider -v

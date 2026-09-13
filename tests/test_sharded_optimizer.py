@@ -1,5 +1,4 @@
 from copy import deepcopy
-from typing import Type
 
 import numpy
 import pytest
@@ -26,7 +25,7 @@ def test_sharded_optimizer(model_class):
     )
 
 
-def _test_sharded_optimizer(rank: int, world_size: int, model_class: Type[torch.nn.Module]):
+def _test_sharded_optimizer(rank: int, world_size: int, model_class: type[torch.nn.Module]):
     # Use gloo backend for CPU
     device = _setup_process_group(rank=rank, world_size=world_size, backend="gloo")
     torch.manual_seed(42)

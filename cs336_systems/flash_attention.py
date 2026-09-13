@@ -30,6 +30,14 @@ def _flatten_batch(x: Tensor) -> Tensor:
     return x.reshape(-1, x.shape[-2], x.shape[-1])
 
 
+def _common_dtype(*tensors: Tensor) -> torch.dtype:
+    """Under ``torch.autocast`` Q/K (after RoPE) may be fp32 while V is bf16; pick one dtype."""
+    dtype = tensors[0].dtype
+    for t in tensors[1:]:
+        dtype = torch.promote_types(dtype, t.dtype)
+    return dtype
+
+
 def causal_mask(n_queries: int, n_keys: int, device=None) -> Tensor:
     q = torch.arange(n_queries, device=device)[:, None]
     k = torch.arange(n_keys, device=device)[None, :]
@@ -138,6 +146,9 @@ class FlashAttentionPytorch(torch.autograd.Function):
     @staticmethod
     def forward(ctx, Q: Tensor, K: Tensor, V: Tensor, is_causal: bool = False) -> Tensor:
         batch_shape = Q.shape[:-2]
+        ctx.input_dtypes = (Q.dtype, K.dtype, V.dtype)
+        dtype = _common_dtype(Q, K, V)
+        Q, K, V = (t.to(dtype) for t in (Q, K, V))
         Qf, Kf, Vf = (_flatten_batch(t) for t in (Q, K, V))
         q_tile = min(FlashAttentionPytorch.Q_TILE_SIZE, Qf.shape[-2])
         k_tile = min(FlashAttentionPytorch.K_TILE_SIZE, Kf.shape[-2])
@@ -158,11 +169,12 @@ class FlashAttentionPytorch(torch.autograd.Function):
             _flatten_batch(K),
             _flatten_batch(V),
             _flatten_batch(O),
-            _flatten_batch(dO),
+            _flatten_batch(dO.to(Q.dtype)),
             L.reshape(-1, n_q),
             ctx.is_causal,
         )
-        return dQ.reshape(Q.shape), dK.reshape(K.shape), dV.reshape(V.shape), None
+        dq_t, dk_t, dv_t = ctx.input_dtypes
+        return dQ.reshape(Q.shape).to(dq_t), dK.reshape(K.shape).to(dk_t), dV.reshape(V.shape).to(dv_t), None
 
 
 def flash_attention_pytorch(Q: Tensor, K: Tensor, V: Tensor, is_causal: bool = False) -> Tensor:

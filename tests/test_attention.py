@@ -1,6 +1,6 @@
 import pytest
 import torch
-from einops import einsum, rearrange
+from einops import einsum
 
 from .adapters import (
     get_flashattention_autograd_function_pytorch,

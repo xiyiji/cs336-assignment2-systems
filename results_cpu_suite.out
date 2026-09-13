@@ -1,0 +1,9 @@
+[12:50:23] == 1. end-to-end benchmark (§2.1.3): small model, warmup ablation, bf16, compile ==
+[small ctx=128 bs=4 forward fp32] params=128.6M  step=862.56±493.12 ms  (fwd 862.55 / bwd 0.00 / opt 0.00)
+[small ctx=128 bs=4 forward_backward fp32] params=128.6M  step=1815.54±435.78 ms  (fwd 469.75 / bwd 1334.85 / opt 10.95)
+[small ctx=128 bs=4 train fp32] params=128.6M  step=5969.19±1077.92 ms  (fwd 922.67 / bwd 2613.88 / opt 2432.64)
+[small ctx=256 bs=4 forward fp32] params=128.6M  step=1343.19±369.85 ms  (fwd 1343.16 / bwd 0.03 / opt 0.01)
+[small ctx=256 bs=4 forward_backward fp32] params=128.6M  step=4443.45±792.19 ms  (fwd 1355.85 / bwd 3071.32 / opt 16.29)
+[small ctx=256 bs=4 train fp32] params=128.6M  step=6874.30±1685.60 ms  (fwd 1402.48 / bwd 3610.21 / opt 1861.62)
+[small ctx=512 bs=4 forward fp32] params=128.6M  step=3115.74±484.41 ms  (fwd 3115.68 / bwd 0.00 / opt 0.05)
+[small ctx=512 bs=4 forward_backward fp32] params=128.6M  step=7657.98±1368.68 ms  (fwd 2751.95 / bwd 4877.92 / opt 28.11)

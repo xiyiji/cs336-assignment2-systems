@@ -53,19 +53,21 @@ def flash_backward(
     """Recompute ``P`` from ``L`` and return ``(dQ, dK, dV)``.
 
     All tensors are ``(B, n, d)`` except ``L`` which is ``(B, n_q)``.
-    ``D = rowsum(O * dO)`` replaces the softmax Jacobian (Eq. 17).
+    ``D = rowsum(O * dO)`` replaces the softmax Jacobian (Eq. 17). Matmuls run in
+    the input dtype (bf16 under autocast); ``P``, ``D`` and ``dS`` are kept in fp32
+    and cast back right before each matmul, mirroring the Triton kernels.
     """
     scale = 1.0 / math.sqrt(Q.shape[-1])
-    S = torch.matmul(Q, K.transpose(-1, -2)) * scale
+    S = torch.matmul(Q, K.transpose(-1, -2)).float() * scale
     if is_causal:
         S = torch.where(causal_mask(Q.shape[-2], K.shape[-2], S.device), S, MASK_VALUE)
     P = torch.exp(S - L[..., None])
-    dV = torch.matmul(P.transpose(-1, -2), dO)
-    dP = torch.matmul(dO, V.transpose(-1, -2))
-    D = (O * dO).sum(-1)
+    dV = torch.matmul(P.to(dO.dtype).transpose(-1, -2), dO)
+    dP = torch.matmul(dO, V.transpose(-1, -2)).float()
+    D = (O.float() * dO.float()).sum(-1)
     dS = P * (dP - D[..., None])
-    dQ = torch.matmul(dS, K) * scale
-    dK = torch.matmul(dS.transpose(-1, -2), Q) * scale
+    dQ = torch.matmul(dS.to(K.dtype), K) * scale
+    dK = torch.matmul(dS.to(Q.dtype).transpose(-1, -2), Q) * scale
     return dQ, dK, dV
 
 

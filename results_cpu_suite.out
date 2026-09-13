@@ -7,3 +7,7 @@
 [small ctx=256 bs=4 train fp32] params=128.6M  step=6874.30±1685.60 ms  (fwd 1402.48 / bwd 3610.21 / opt 1861.62)
 [small ctx=512 bs=4 forward fp32] params=128.6M  step=3115.74±484.41 ms  (fwd 3115.68 / bwd 0.00 / opt 0.05)
 [small ctx=512 bs=4 forward_backward fp32] params=128.6M  step=7657.98±1368.68 ms  (fwd 2751.95 / bwd 4877.92 / opt 28.11)
+[small ctx=512 bs=4 train fp32] params=128.6M  step=10632.61±3298.33 ms  (fwd 3320.80 / bwd 5934.83 / opt 1376.98)
+[small ctx=256 bs=4 forward_backward fp32] params=128.6M  step=2824.20±530.82 ms  (fwd 859.79 / bwd 1951.69 / opt 12.72)
+[small ctx=256 bs=4 forward_backward fp32] params=128.6M  step=2433.86±306.85 ms  (fwd 710.73 / bwd 1711.69 / opt 11.45)
+[small ctx=256 bs=4 forward_backward fp32] params=128.6M  step=2189.27±272.03 ms  (fwd 661.21 / bwd 1516.75 / opt 11.31)

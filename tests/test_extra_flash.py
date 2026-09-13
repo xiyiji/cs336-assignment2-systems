@@ -60,6 +60,23 @@ def test_pytorch_flash_batch_dims_and_rectangular(shape):
     torch.testing.assert_close(v.grad, dv, rtol=1e-3, atol=1e-3)
 
 
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_pytorch_flash_bf16_inputs(is_causal):
+    """bf16 Q/K/V (as under autocast): matmuls in bf16, softmax statistics in fp32."""
+    q, k, v, do = _make_attn_inputs()
+    qb, kb, vb = (t.detach().bfloat16().requires_grad_(True) for t in (q, k, v))
+    o = FlashAttentionPytorch.apply(qb, kb, vb, is_causal)
+    assert o.dtype == torch.bfloat16
+    o.backward(do.bfloat16())
+    o_ref = naive_attention(q, k, v, is_causal)
+    dq, dk, dv = _ref_grads(q, k, v, do, is_causal)
+    tol = dict(rtol=5e-2, atol=5e-2)
+    torch.testing.assert_close(o.float(), o_ref, **tol)
+    torch.testing.assert_close(qb.grad.float(), dq, **tol)
+    torch.testing.assert_close(kb.grad.float(), dk, **tol)
+    torch.testing.assert_close(vb.grad.float(), dv, **tol)
+
+
 def test_pytorch_flash_small_tiles_match():
     """Tile size must not change the result (online softmax invariance)."""
     q, k, v, _ = _make_attn_inputs()

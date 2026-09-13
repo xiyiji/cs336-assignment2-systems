@@ -23,7 +23,7 @@ jobs:
           python-version: "3.13"
       - name: Install (CPU torch wheel to keep the job small)
         run: |
-          uv venv
+          uv venv --clear
           uv pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e ./cs336-basics -e . pytest
       - name: Official + extra tests (CPU, gloo)
@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: |
-          uv venv
+          uv venv --clear
           uv pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e ./cs336-basics -e . pytest triton
       - run: TRITON_INTERPRET=1 uv run --no-sync pytest tests/test_extra_flash.py -k triton -q -p no:cacheprovider -v

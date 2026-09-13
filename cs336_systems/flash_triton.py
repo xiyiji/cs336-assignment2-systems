@@ -133,8 +133,8 @@ if HAS_TRITON:
             o = o * alpha[:, None]
             o = tl.dot(p.to(v.dtype), v, acc=o)
             m = m_new
-            K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
-            V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
+            K_block_ptr = tl.advance(K_block_ptr, (K_TILE_SIZE, 0))
+            V_block_ptr = tl.advance(V_block_ptr, (K_TILE_SIZE, 0))
 
         o = o / l[:, None]
         L_val = m + tl.log(l)
@@ -229,10 +229,10 @@ if HAS_TRITON:
             ds = p * (dp - d[:, None])
             dk = tl.dot(tl.trans(ds).to(q.dtype), q, acc=dk)
 
-            Q_block_ptr = Q_block_ptr.advance((Q_TILE_SIZE, 0))
-            dO_block_ptr = dO_block_ptr.advance((Q_TILE_SIZE, 0))
-            L_block_ptr = L_block_ptr.advance((Q_TILE_SIZE,))
-            D_block_ptr = D_block_ptr.advance((Q_TILE_SIZE,))
+            Q_block_ptr = tl.advance(Q_block_ptr, (Q_TILE_SIZE, 0))
+            dO_block_ptr = tl.advance(dO_block_ptr, (Q_TILE_SIZE, 0))
+            L_block_ptr = tl.advance(L_block_ptr, (Q_TILE_SIZE,))
+            D_block_ptr = tl.advance(D_block_ptr, (Q_TILE_SIZE,))
 
         dk = dk * scale
         tl.store(dK_block_ptr, dk.to(dK_block_ptr.type.element_ty), boundary_check=(0,))
@@ -315,8 +315,8 @@ if HAS_TRITON:
             dp = tl.dot(do, tl.trans(v))
             ds = p * (dp - d[:, None])
             dq = tl.dot(ds.to(k.dtype), k, acc=dq)
-            K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))
-            V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))
+            K_block_ptr = tl.advance(K_block_ptr, (K_TILE_SIZE, 0))
+            V_block_ptr = tl.advance(V_block_ptr, (K_TILE_SIZE, 0))
 
         dq = dq * scale
         tl.store(dQ_block_ptr, dq.to(dQ_block_ptr.type.element_ty), boundary_check=(0,))

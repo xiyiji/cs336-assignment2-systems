@@ -1,0 +1,5 @@
+fp32 accumulator, fp32 addend                      10.000134
+fp16 accumulator, fp16 addend                      9.953125
+fp32 accumulator, fp16 addend (implicit upcast)    10.002136
+fp32 accumulator, fp16 addend cast to fp32         10.002136
+exact                                              10.000000

@@ -1,0 +1,11 @@
+small: N=12 blocks, residuals per block R=415.1 MiB, checkpoint input C=6.0 MiB
+ segment  saved_fwd_MiB  model_peak_MiB
+       1           72.0           487.1  <- analytic optimum
+       2           36.0           866.1
+       3           24.0          1269.2
+       4           18.0          1678.2
+       6           12.0          2502.4
+       8           12.0          3332.5
+      12            6.0          4986.8
+recursive          439.1          ~439.1
+    none         4980.8          4980.8

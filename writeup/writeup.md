@@ -125,9 +125,16 @@ bf16 has only 8 mantissa bits (vs 11), so the centred values `x − μ` and the
 normalised outputs lose precision, which is why PyTorch keeps `layer_norm` in
 fp32 under bf16 autocast too.
 
-**(c)** fp32 vs bf16 autocast on this CPU (`small` ctx 256, `medium` ctx 128, fwd+bwd):
+**(c)** fp32 vs bf16 autocast on this CPU (`small`, ctx 128, fwd+bwd):
 
-<!-- BF16_TABLE -->
+| model / ctx | mode | fp32 step | bf16 autocast step | note |
+|---|---|---|---|---|
+| small / 128 | fwd+bwd | 1017 ± 181 ms (fwd 258, bwd 749) | 82 588 ± 2 526 ms (fwd 3 531, bwd 79 013) | 2 warm-up / 3 steps vs 1 / 2 |
+
+On this CPU bf16 autocast is **80× slower**: PyTorch's CPU bf16 GEMM falls back to a
+single-threaded reference kernel (the run pinned exactly one core), so the
+comparison says nothing about GPUs, where bf16 goes through tensor cores. The
+`medium` bf16 run was dropped for that reason.
 
 **[GPU – not measured]** On a B200 bf16 autocast should give 3–4× on the
 matmul-dominated sizes, with the gain growing with model size because the
@@ -181,12 +188,13 @@ at `scaled_dot_product_attention` and `SwiGLU.forward`.
 
 **(f)** **[GPU – not measured]** `nsys profile --cuda-memory-usage=true`
 with the PyTorch NVTX labels. From the residual accounting in §3 (measured on
-CPU, which is dtype/shape-exact): a single `xl` block at ctx 2048 saves
-3651 MiB, dominated by (i) the three `seq×seq` attention tensors (3 × 2 GiB
-… of which one is freed after softmax, see the table in
-`results/cpu/residuals_xl_block.txt`), (ii) SwiGLU's `w1(x)`, `w3(x)`, `silu`
-and the gated product (4 × 320 MiB), (iii) the two RMSNorm inputs and the
-attention input/output (80 MiB each). During backward the block's gradients
+CPU, which is dtype/shape-exact): a single eager `xl` block at ctx 2048 saves
+9 674 MiB (3 651 MiB once `torch.compile` fuses the attention and SwiGLU
+chains), dominated by (i) the three `seq×seq` attention tensors (3 × 2 GiB:
+pre-softmax scores, softmax output, and the copy `einsum` keeps for `PV`),
+(ii) SwiGLU's `w1(x)`, `w3(x)`, `silu`, gated product (5 × 320 MiB), (iii) ten
+residual-stream-sized tensors (norm inputs/outputs, q/k/v, attention output;
+80 MiB each) — see the table in §3. During backward the block's gradients
 are `4·d² + 3·d·d_ff + 2·d` fp32 values = 400 MiB per block, i.e. roughly
 one ninth of the activations it frees, matching the gradient-tensor size one
 expects from the parameter count (104.9 M params × 4 B).
@@ -198,7 +206,27 @@ expects from the parameter count (104.9 M params × 4 B).
 Measured with [`scripts/autograd_residuals.py`](../scripts/autograd_residuals.py)
 using `saved_tensors_hooks` (device-independent):
 
-<!-- RESIDUALS_BLOCK -->
+*RMSNorm* (`results/cpu/residuals_rmsnorm.txt`): the eager module saves three
+full-size `(4, 512, 2560)` fp32 tensors (input, `x·rms`, and the `MulBackward`
+operand) plus the two `(4, 512, 1)` rsqrt outputs, reproducing the handout's
+listing; each of those is 20 MiB, i.e. 3× the activation for one normalisation.
+
+*One `xl` TransformerBlock, batch 4, ctx 2048, eager* (`results/cpu/residuals_xl_block.txt`):
+
+| residual group | tensors | MiB |
+|---|---|---|
+| attention scores `(4, 32, 2048, 2048)` fp32 — pre-softmax, post-softmax, and the `einsum` operand copy | 3 | 6 144 |
+| SwiGLU intermediates `(4, 2048, 10240)` fp32 (`w1(x)`, `w3(x)`, `silu`, gated product, …) | 5 | 1 600 |
+| residual-stream sized tensors `(4, 2048, 2560)` fp32 (norm inputs/outputs, q/k/v, attention output) | 10 | 800 |
+| weight *views* saved by `einsum` (`(1, 2560, 2560)`, `(1, 8192, 2560)`, …; not counted by the handout) | 11 | 940 |
+| RoPE cos/sin slices, causal mask, argmax indices | – | 9 |
+| **total** | | **9 674** |
+
+Eager PyTorch saves **9.4 GiB per block** — 2.6× the handout's 3651 MiB, which
+was measured *after* `torch.compile(fullgraph=True)` fused the attention
+softmax/mask/scale chain (dropping two of the three 2 GiB `seq×seq` copies) and
+the SwiGLU elementwise chain. Either way, the `seq²` attention tensors dominate,
+which is what FlashAttention (§4) removes.
 
 ### Problem (gradient_checkpointing)
 
@@ -232,7 +260,23 @@ allowed segment wins and the "next smaller" size only exists by nesting
 (forbidden here). Measured saved-bytes sweep on a `small`-sized stack
 (12 blocks, ctx 512) confirming the `⌈N/s⌉·C + s·R` model:
 
-<!-- CKPT_SWEEP -->
+| segment size `s` | saved during forward (MiB) | model `⌈N/s⌉·C + s·R` (MiB) |
+|---|---|---|
+| 1 | 72.0 | **487.1** ← optimum |
+| 2 | 36.0 | 866.1 |
+| 3 | 24.0 | 1269.2 |
+| 4 | 18.0 | 1678.2 |
+| 6 | 12.0 | 2502.4 |
+| 8 | 12.0 | 3332.5 |
+| 12 (= no checkpoint inside, one segment) | 6.0 | 4986.8 |
+| recursive (binary) | 439.1 | ≈ 439 |
+| none | 4980.8 | 4980.8 |
+
+(`small` config, N = 12, ctx 512: R = 415.1 MiB per block, C = 6 MiB. The
+"saved during forward" column is what `checkpoint` actually keeps alive before
+backward — only the segment inputs — and the model column adds the one
+materialised segment during backward. With C/R ≈ 1/70 the curve is monotone in
+`s`, exactly as for `xl`.)
 
 **[GPU – not measured]** The GPU suite runs `--checkpointing segments
 --segment-size {1,2,3,…,32}` on `xl`/2048 and records `peak_memory_mib`.
@@ -272,7 +316,14 @@ memory-bound softmax part; the matmuls are unchanged.
 
 **(b)** Whole-model compile (`--compile`), `small` ctx 128 fwd+bwd on CPU:
 
-<!-- COMPILE_TABLE -->
+| small, ctx 128, fwd+bwd (3 warm-up / 5 steps) | step | fwd | bwd |
+|---|---|---|---|
+| eager | 1146 ± 79 ms | 306 ms | 826 ms |
+| `torch.compile` (inductor, C++ backend) | 980 ± 60 ms | 255 ms | 717 ms |
+
+Compiling the whole model gives 1.17× on CPU (17 % on forward, 13 % on
+backward); the first compiled call took ~70 s, which is why the warm-up steps
+are excluded from the timing.
 
 **[GPU – not measured]** Expect 1.2–1.5× on forward (RMSNorm/SiLU/RoPE fusion,
 fewer launches) and a smaller relative gain on the full step because the

@@ -1,0 +1,49 @@
+xl block, batch=4, ctx=2048, compiled=False
+  saved (4, 2048, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 1) torch.float32  0.03 MiB
+  saved (4, 2048, 1) torch.float32  0.03 MiB
+  saved (4, 2048, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 2560) torch.float32  80.00 MiB
+  saved (1, 2560, 2560) torch.float32  25.00 MiB
+  saved (1, 8192, 2560) torch.float32  80.00 MiB
+  saved (1, 2560, 2560) torch.float32  25.00 MiB
+  saved (1, 8192, 2560) torch.float32  80.00 MiB
+  saved (1, 2560, 2560) torch.float32  25.00 MiB
+  saved (1, 8192, 2560) torch.float32  80.00 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (2048, 40) torch.float32  0.31 MiB
+  saved (128, 80, 2048) torch.float32  80.00 MiB
+  saved (128, 2048, 80) torch.float32  80.00 MiB
+  saved (1, 2048, 2048) torch.bool  4.00 MiB
+  saved (4, 32, 2048, 1) torch.int64  2.00 MiB
+  saved (4, 32, 2048, 2048) torch.float32  2048.00 MiB
+  saved (4, 32, 2048, 1) torch.float32  1.00 MiB
+  saved (4, 32, 2048, 2048) torch.float32  2048.00 MiB
+  saved (128, 2048, 80) torch.float32  80.00 MiB
+  saved (128, 2048, 2048) torch.float32  2048.00 MiB
+  saved (1, 2560, 2560) torch.float32  25.00 MiB
+  saved (1, 8192, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 1) torch.float32  0.03 MiB
+  saved (4, 2048, 1) torch.float32  0.03 MiB
+  saved (4, 2048, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 2560) torch.float32  80.00 MiB
+  saved (1, 2560, 10240) torch.float32  100.00 MiB
+  saved (1, 8192, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 10240) torch.float32  320.00 MiB
+  saved (4, 2048, 10240) torch.float32  320.00 MiB
+  saved (4, 2048, 10240) torch.float32  320.00 MiB
+  saved (1, 2560, 10240) torch.float32  100.00 MiB
+  saved (1, 8192, 2560) torch.float32  80.00 MiB
+  saved (4, 2048, 10240) torch.float32  320.00 MiB
+  saved (4, 2048, 10240) torch.float32  320.00 MiB
+  saved (1, 10240, 2560) torch.float32  100.00 MiB
+  saved (1, 8192, 10240) torch.float32  320.00 MiB
+Total size of saved tensors in single TransformerBlock: 9673.62 MiB
+One residual-stream activation tensor: 80.00 MiB (batch*ctx*d_model*4 bytes)

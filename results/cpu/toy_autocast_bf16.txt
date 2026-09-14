@@ -1,0 +1,7 @@
+fc1.weight inside autocast     torch.float32
+fc1 output                     torch.bfloat16
+layernorm output               torch.bfloat16
+logits                         torch.bfloat16
+loss                           torch.float32
+fc1.weight.grad                torch.float32
+ln.weight.grad                 torch.float32

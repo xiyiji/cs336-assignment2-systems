@@ -23,10 +23,15 @@ import timeit
 from collections.abc import Callable
 
 import torch
+import torch._functorch.config as _functorch_config
 
 from cs336_systems.flash_attention import flash_attention_pytorch, naive_attention
 
 DTYPES = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}
+
+# The backward-only timing calls backward(retain_graph=True) on one graph; compiled
+# backward functions reject that unless donated buffers are disabled.
+_functorch_config.donated_buffer = False
 
 
 def get_impl(name: str) -> Callable:

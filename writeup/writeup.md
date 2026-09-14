@@ -292,7 +292,38 @@ Script: [`cs336_systems/attention_benchmark.py`](../cs336_systems/attention_benc
 read right before backward). CPU results (`iters=5`, seq ≤ 4096; larger
 sequences were not run on the laptop):
 
-<!-- ATTN_TABLE -->
+Forward / backward / forward+backward, ms per call, batch 8, fp32, no causal mask
+(`results/cpu/attention.csv`; `compiled` = `torch.compile(naive_attention)`,
+`flash_pytorch` = our tiled `autograd.Function` with 64×64 tiles):
+
+| d | seq | naive fwd | naive bwd | naive f+b | compiled fwd | compiled bwd | compiled f+b | flash-py fwd | flash-py bwd | flash-py f+b |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 16 | 256 | 0.8 | 0.6 | 1.2 | 11.3¹ | 0.5 | 1.0 | 4.8 | 1.5 | 6.6 |
+| 16 | 1024 | 10.9 | 13.3 | 23.7 | 54.6¹ | 8.9 | 17.5 | 145.8 | 38.1 | 127.5 |
+| 16 | 4096 | 159.5 | 454.6 | 455.0 | 133.4 | 288.7 | 430.1 | 868.0 | 672.3 | 2631.3 |
+| 32 | 256 | 0.6 | 0.7 | 1.2 | 102.8¹ | 0.8 | 1.7 | 5.3 | 4.5 | 13.4 |
+| 32 | 1024 | 14.3 | 28.3 | 20.4 | 9.9 | 13.1 | 21.2 | 221.6 | 28.4 | 95.7 |
+| 32 | 4096 | 170.7 | 272.4 | 442.5 | 147.2 | 352.7 | 484.3 | 756.8 | 634.3 | 1652.9 |
+| 64 | 256 | 0.6 | 1.4 | 3.7 | 1.1 | 0.8 | 1.6 | 4.0 | 1.8 | 5.5 |
+| 64 | 1024 | 21.2 | 25.2 | 39.3 | 11.9 | 20.9 | 35.7 | 60.8 | 28.9 | 80.9 |
+| 64 | 4096 | 224.7 | 441.6 | 590.4 | 164.5 | 311.2 | 511.5 | 997.1 | 964.3 | 1419.9 |
+| 128 | 256 | 2.1 | 2.6 | 4.5 | 0.8 | 1.2 | 1.7 | 5.0 | 2.1 | 7.1 |
+| 128 | 1024 | 15.1 | 30.6 | 49.7 | 11.4 | 20.5 | 36.2 | 78.0 | 34.9 | 114.3 |
+| 128 | 4096 | 280.5 | 378.3 | 571.6 | 192.8 | 331.1 | 505.3 | 1325.3 | 903.2 | 3024.3 |
+
+¹ includes an inductor recompilation for the new shape inside the timed
+region (5 iterations only). seq 8192 / 16384 were not run on the laptop
+(the 8 × 16384² fp32 score matrix alone is 8 GiB per copy). No OOM occurs at
+these sizes on CPU; on a GPU the OOM point is derived below.
+
+The forward time of the naive implementation scales ~16× per 4× of `seq`
+(quadratic, as expected) and is almost independent of `d` at small `d`: it is
+dominated by the `seq×seq` softmax/mask traffic, not by the matmuls. Backward
+costs ~2× forward. The tiled PyTorch flash implementation is 3–6× *slower*
+than naive on CPU — it runs 64×64-tile Python loops (`(seq/64)²` iterations)
+and exists to validate the algorithm and the Triton kernel, not for speed;
+its backward (one compiled recomputation, no Python tiling) is on par with
+naive.
 
 Memory accounting for the smallest configuration that typically OOMs on an
 80 GB GPU (d = 16, seq = 16384): the inputs are tiny (`3 × 8 × 16384 × 16 × 4 B
@@ -386,9 +417,24 @@ be swept per input size; the PyTorch baseline will OOM well before 65536.
 `all_gather_object` and averaged over ranks (`--backend nccl` on GPUs). CPU /
 gloo, 2 / 4 / 6 processes, 1 MB – 1 GB:
 
-<!-- ALLREDUCE_TABLE -->
+| procs | 1 MB | 10 MB | 100 MB | 1 GB |
+|---|---|---|---|---|
+| 2 | 0.78 ± 0.08 ms (1.35 GB/s) | 4.25 ± 0.67 ms (2.47 GB/s) | 42.1 ± 4.7 ms (2.49 GB/s) | 526 ± 67 ms (1.99 GB/s) |
+| 4 | 2.14 ± 1.00 ms (0.73 GB/s) | 11.8 ± 1.6 ms (1.33 GB/s) | 97.7 ± 6.3 ms (1.61 GB/s) | 1024 ± 175 ms (1.54 GB/s) |
+| 6 | 3.97 ± 0.84 ms (0.44 GB/s) | 28.0 ± 15.6 ms (0.62 GB/s) | 175 ± 17 ms (1.00 GB/s) | 5161 ± 4839 ms (0.34 GB/s) |
 
-<!-- ALLREDUCE_COMMENT -->
+(bus bandwidth = `2(N−1)/N · size / time`, i.e. the ring-all-reduce volume per rank.)
+
+Time grows linearly with the tensor size once the tensor is ≳ 10 MB (the 1 MB
+points are latency-dominated: ~0.4 ms per process pair on gloo's TCP/libuv
+path) and grows with the number of processes even though a ring all-reduce
+should be size-independent in `N`: gloo runs on CPU threads that compete with
+each other for the same 8 cores and memory bandwidth (the reduction itself is
+a CPU `add`), so 6 processes × 1 GB collapses to 0.34 GB/s with huge variance
+(page faults and swapping of 6 GB of buffers). The ranking
+`2 procs > 4 > 6` and the ~2.5 GB/s ceiling are properties of this laptop;
+on NCCL/NVLink one expects ~hundreds of GB/s, 1 GB in a few ms, and a mild
+`(N−1)/N` dependence on the number of GPUs.
 
 ### Problem (naive_ddp)
 
@@ -408,9 +454,29 @@ Setup here: CPU, gloo, 2 processes, `small` model, ctx 128, global batch 4,
 2 warm-up + 5 timed steps (the handout's setting is 1 node × 2 GPUs, `xl` —
 `scripts/run_gpu_suite.sh` §5):
 
-<!-- DDP_TABLE -->
+| strategy | step (ms) | time in `finish_gradient_synchronization` (ms) | share | local params | local AdamW state |
+|---|---|---|---|---|---|
+| naive (one sync all-reduce per parameter) | 7293 ± 1948 | 628 | 8.6 % | 491 MiB | 981 MiB |
+| flat (one all-reduce of the flattened gradients) | 5551 ± 744 | 1526 | 27.5 % | 491 MiB | 981 MiB |
+| overlap (async per-parameter all-reduce in hooks) | **3999 ± 815** | **39** | 1.0 % | 491 MiB | 981 MiB |
+| bucketed (25 MB buckets, async) | 5822 ± 1105 | 486 | 8.3 % | 491 MiB | 981 MiB |
+<!-- DDP_EXTRA_ROWS -->
 
-<!-- DDP_COMMENT -->
+On this machine the overlapped implementation is the clear winner: its
+exposed communication is 39 ms (1 % of the step) because the 491 MiB of
+gradients are all-reduced while the backward pass is still running, whereas
+naive DDP spends 0.6 s after backward doing 149 separate synchronous
+all-reduces. Flattening into a single 491 MiB all-reduce did *not* help on
+gloo/CPU: the one big collective is slower than many medium ones (gloo
+pipelines several outstanding ops across threads, and the flatten/unflatten
+copies add two passes over 491 MiB), so it spends 1.5 s in communication —
+on NCCL the per-call launch overhead (~tens of µs) is what flattening saves,
+and the handout's expectation is that flat ≥ naive there. Bucketing sits
+between: with 25 MB buckets only ~20 collectives are issued and they overlap
+with backward, but the last bucket (embeddings + first layers) is only ready
+at the very end, and gloo's serial reduction of large buffers leaves 0.5 s
+exposed. The large run-to-run standard deviations (±15–25 %) are CPU
+scheduling noise from running two 8-thread ranks on 8 cores.
 
 `FlatDDP` concatenates all gradients with `torch._utils._flatten_dense_tensors`,
 issues a single all-reduce and copies back; `DDPOverlapIndividual` registers a
@@ -459,7 +525,7 @@ replicated. Our CPU run reports the analytic byte counts
 (`param_bytes_local`, `opt_state_bytes_local`) and they match: with sharding
 the local AdamW state halves while parameter bytes are unchanged:
 
-<!-- SHARDED_TABLE -->
+<!-- SHARDED_TABLE_PENDING -->
 
 **(b)** Speed: the per-rank optimizer step is ~2× cheaper (half the
 parameters), but each step now ends with a broadcast of *all* parameters

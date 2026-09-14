@@ -30,6 +30,8 @@ Design
 from __future__ import annotations
 
 import math
+import os
+import sys
 
 import torch
 import torch.distributed as dist
@@ -77,14 +79,31 @@ class _ShardUnit:
         return compute_dtype if compute_dtype is not None else self.param.dtype
 
 
+def _default_sync_comm() -> bool:
+    """gloo's libuv transport (macOS) corrupts its stream with many in-flight async
+    collectives ("Unexpected opcode"); serialise communication there by default.
+    Override with CS336_FSDP_SYNC_COMM=0/1."""
+    env = os.environ.get("CS336_FSDP_SYNC_COMM")
+    if env is not None:
+        return env not in ("0", "false", "False", "")
+    return sys.platform == "darwin" and dist.get_backend() == "gloo"
+
+
 class FSDP(nn.Module):
-    def __init__(self, module: nn.Module, compute_dtype: torch.dtype | None = None, prefetch_distance: int = 2):
+    def __init__(
+        self,
+        module: nn.Module,
+        compute_dtype: torch.dtype | None = None,
+        prefetch_distance: int = 2,
+        sync_comm: bool | None = None,
+    ):
         super().__init__()
         if not dist.is_initialized():
             raise RuntimeError("torch.distributed process group must be initialised before wrapping a module")
         self.module = module
         self.compute_dtype = compute_dtype
         self.prefetch_distance = prefetch_distance
+        self.sync_comm = _default_sync_comm() if sync_comm is None else sync_comm
         self.world_size = dist.get_world_size()
         self.rank = dist.get_rank()
         _broadcast_module(module)
@@ -127,11 +146,15 @@ class FSDP(nn.Module):
         shard = unit.shard.to(dtype)  # cast *before* communicating (saves bandwidth)
         unit.gather_buf = torch.empty(unit.padded_numel, dtype=dtype, device=shard.device)
         unit.gather_handle = dist.all_gather_into_tensor(unit.gather_buf, shard, async_op=True)
+        if self.sync_comm:
+            self._wait_gather(unit)
 
     def _wait_gather(self, unit: _ShardUnit) -> Tensor:
         if unit.full is None:
             if unit.gather_handle is None:
                 self._launch_gather(unit)
+                if unit.full is not None:  # sync_comm: the launch already waited
+                    return unit.full
             unit.gather_handle.wait()
             unit.gather_handle = None
             unit.full = unit.gather_buf[: unit.numel].view(unit.full_shape)
@@ -195,6 +218,11 @@ class FSDP(nn.Module):
             del full_grad
             unit.grad_buf = torch.empty(unit.shard_numel, dtype=unit.shard.dtype, device=unit.shard.device)
             unit.grad_handle = dist.reduce_scatter_tensor(unit.grad_buf, flat, op=dist.ReduceOp.SUM, async_op=True)
+            if self.sync_comm:
+                unit.grad_handle.wait()
+                unit.grad_handle = None
+                unit.param.grad = unit.grad_buf
+                unit.grad_buf = None
 
         return hook
 
@@ -202,7 +230,11 @@ class FSDP(nn.Module):
         if param.grad is None:
             return
         param.grad.div_(self.world_size)
-        self._replicated_handles.append(dist.all_reduce(param.grad, op=dist.ReduceOp.SUM, async_op=True))
+        handle = dist.all_reduce(param.grad, op=dist.ReduceOp.SUM, async_op=True)
+        if self.sync_comm:
+            handle.wait()
+        else:
+            self._replicated_handles.append(handle)
 
     # ------------------------------------------------------------------ #
     # Public API

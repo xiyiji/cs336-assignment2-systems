@@ -1,3 +1,7 @@
+---
+title: Writeup
+---
+
 # CS336 Assignment 2 (Systems) — Writeup
 
 Repository: <https://github.com/xiyiji/cs336-assignment2-systems>.
@@ -7,12 +11,12 @@ Handout version 26.1.3 (Spring 2026).
 laptop (8 cores, 24 GB, no CUDA) with PyTorch 2.11 (fp32 unless stated, gloo
 backend for anything distributed). Every problem that *requires* a GPU
 (Nsight Systems, `memory_viz`, NCCL, Triton timing, the 2×B200 leaderboard) has
-its exact command in [`scripts/run_gpu_suite.sh`](../scripts/run_gpu_suite.sh)
+its exact command in [`scripts/run_gpu_suite.sh`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/scripts/run_gpu_suite.sh)
 and is answered here with the analysis / expected behaviour, clearly labelled
 **[GPU – not measured]**. No GPU number in this document is invented.
 Raw outputs for everything that was measured are in
-[`results/cpu/`](../results/cpu) and rendered in
-[`tables_cpu.md`](./tables_cpu.md).
+[`results/cpu/`](https://github.com/xiyiji/cs336-assignment2-systems/tree/main/results/cpu) and rendered in
+[`tables_cpu.md`](tables_cpu.html).
 
 ---
 
@@ -20,7 +24,7 @@ Raw outputs for everything that was measured are in
 
 ### Problem (benchmarking_script)
 
-**(a)** [`cs336_systems/benchmark.py`](../cs336_systems/benchmark.py). It builds
+**(a)** [`cs336_systems/benchmark.py`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/benchmark.py). It builds
 `BasicsTransformerLM` from Table 1 (`--size`), draws a random batch, runs
 `--warmup` un-timed steps and then `--steps` timed steps in one of three modes
 (`--mode forward | forward_backward | train`; `train` includes the assignment-1
@@ -227,7 +231,7 @@ expects from the parameter count (104.9 M params × 4 B).
 
 ## 3 Single-GPU Memory
 
-Measured with [`scripts/autograd_residuals.py`](../scripts/autograd_residuals.py)
+Measured with [`scripts/autograd_residuals.py`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/scripts/autograd_residuals.py)
 using `saved_tensors_hooks` (device-independent):
 
 *RMSNorm* (`results/cpu/residuals_rmsnorm.txt`): the eager module saves three
@@ -266,7 +270,7 @@ sketch (the real one is `cs336_systems.checkpointing.recursive_checkpoint`):
 ```python
 def run(blocks, x):
     if len(blocks) == 1:
-        return blocks[0](x)
+        return blocks[0](https://github.com/xiyiji/cs336-assignment2-systems/tree/main/x)
     mid = len(blocks) // 2
     x = checkpoint(lambda h: run(blocks[:mid], h), x, use_reentrant=False)  # first half: recomputed later
     return run(blocks[mid:], x)                                             # second half: kept
@@ -311,7 +315,7 @@ materialised segment during backward. With C/R ≈ 1/70 the curve is monotone in
 
 ### Problem (pytorch_attention)
 
-Script: [`cs336_systems/attention_benchmark.py`](../cs336_systems/attention_benchmark.py)
+Script: [`cs336_systems/attention_benchmark.py`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/attention_benchmark.py)
 (batch 8, no heads, 100 forward and 100 backward passes after warm-up, memory
 read right before backward). CPU results (`iters=5`, seq ≤ 4096; larger
 sequences were not run on the laptop):
@@ -386,14 +390,14 @@ optimizer is not compiled.
 
 ### Problem (flash_forward)
 
-**(a)** [`cs336_systems/flash_attention.py::FlashAttentionPytorch`](../cs336_systems/flash_attention.py):
+**(a)** [`cs336_systems/flash_attention.py::FlashAttentionPytorch`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/flash_attention.py):
 Algorithm 1 in plain PyTorch — `(B_q, B_k) = (64, 64)` tiles, running max `m`,
 running denominator `l`, un-normalised accumulator `O`, all in fp32, causal
 tiles above the diagonal skipped. Saves `L = m + log l` (shape `(..., n_q)`),
 `Q, K, V, O`. Passes `test_flash_forward_pass_pytorch` and our causal / batch-dim
 / rectangular extras.
 
-**(b)** [`cs336_systems/flash_triton.py::flash_fwd_kernel`](../cs336_systems/flash_triton.py)
+**(b)** [`cs336_systems/flash_triton.py::flash_fwd_kernel`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/flash_triton.py)
 uses the handout's signature and block pointers, grid `(T_q, batch)`, one loop
 over key tiles, fp32 on-chip buffers, `tl.dot(P.to(V.dtype), V, acc=O)`.
 
@@ -436,7 +440,7 @@ be swept per input size; the PyTorch baseline will OOM well before 65536.
 
 ### Problem (distributed_communication_single_node)
 
-[`cs336_systems/distributed_benchmark.py`](../cs336_systems/distributed_benchmark.py):
+[`cs336_systems/distributed_benchmark.py`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/distributed_benchmark.py):
 `mp.spawn` × world size, 5 warm-up all-reduces, 10 timed, timings gathered with
 `all_gather_object` and averaged over ranks (`--backend nccl` on GPUs). CPU /
 gloo, 2 / 4 / 6 processes, 1 MB – 1 GB:
@@ -462,7 +466,7 @@ on NCCL/NVLink one expects ~hundreds of GB/s, 1 GB in a few ms, and a mild
 
 ### Problem (naive_ddp)
 
-[`cs336_systems/ddp.py::NaiveDDP`](../cs336_systems/ddp.py) broadcasts rank 0's
+[`cs336_systems/ddp.py::NaiveDDP`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/ddp.py) broadcasts rank 0's
 parameters and buffers at construction and, in `finish_gradient_synchronization`,
 issues one synchronous `all_reduce` per parameter and divides by the world
 size. The graded adapter uses `DDPOverlapIndividual` (below); all four variants
@@ -470,7 +474,7 @@ pass the staff DDP test harness (`tests/test_extra_distributed.py`).
 
 ### Problem (naive_ddp_benchmarking), (minimal_ddp_flat_benchmarking), (ddp_overlap_individual_parameters_benchmarking)
 
-[`cs336_systems/ddp_benchmark.py`](../cs336_systems/ddp_benchmark.py) trains the
+[`cs336_systems/ddp_benchmark.py`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/ddp_benchmark.py) trains the
 model with the chosen wrapper on a global batch split across ranks and reports
 the mean step time and the time spent in `finish_gradient_synchronization`
 (for the overlapped variants that is the *exposed* communication only).
@@ -523,7 +527,7 @@ second stream and only a short tail remains after backward.
 
 ### Problem (optimizer_state_sharding)
 
-[`cs336_systems/sharded_optimizer.py::ShardedOptimizer`](../cs336_systems/sharded_optimizer.py)
+[`cs336_systems/sharded_optimizer.py::ShardedOptimizer`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/sharded_optimizer.py)
 subclasses `torch.optim.Optimizer`. `add_param_group` (called by the base
 constructor and later by the user) records the full group, assigns every new
 parameter to the rank with the smallest element count so far (deterministic,
@@ -586,7 +590,7 @@ tensor granularity (slightly unbalanced).
 
 ### Problem (fsdp)
 
-[`cs336_systems/fsdp.py::FSDP`](../cs336_systems/fsdp.py). Every `Linear` /
+[`cs336_systems/fsdp.py::FSDP`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/fsdp.py). Every `Linear` /
 `Embedding` weight is flattened, zero-padded to a multiple of the world size
 and split into equal 1-D shards; `param.data` is replaced by the local shard in
 place, so parameter names, `requires_grad` and any optimizer (SGD, AdamW from
@@ -741,7 +745,7 @@ bound in (c).
 
 ## 9 Leaderboard **[GPU – not measured]**
 
-[`cs336_systems/leaderboard.py`](../cs336_systems/leaderboard.py) reproduces the
+[`cs336_systems/leaderboard.py`](https://github.com/xiyiji/cs336-assignment2-systems/blob/main/cs336_systems/leaderboard.py) reproduces the
 handout's `do_bench` harness for the 8 B config (batch 2 × 32 768, bf16,
 causal) on all visible GPUs and stacks:
 

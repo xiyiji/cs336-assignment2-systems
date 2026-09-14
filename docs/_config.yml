@@ -1,0 +1,6 @@
+title: CS336 Assignment 2 — Systems
+description: FlashAttention-2 (PyTorch + Triton), DDP, optimizer sharding, FSDP, profiling — implemented from scratch
+theme: jekyll-theme-cayman
+show_downloads: false
+github:
+  repository_url: https://github.com/xiyiji/cs336-assignment2-systems

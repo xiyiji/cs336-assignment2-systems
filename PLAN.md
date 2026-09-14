@@ -77,3 +77,9 @@ FSDP, removes bucketed DDP, and changes the model table. We start from the
   ready to run on a B200/H100 box; CI validates kernel logic with the Triton
   interpreter.
 - Tests bind `MASTER_PORT=12390`, so distributed tests run serially.
+
+## 5. Status (2026-09-14)
+
+Everything in §2 is implemented and pushed; CI is green (lint, CPU tests, Triton interpreter tests);
+the writeup and result tables are published at https://xiyiji.github.io/cs336-assignment2-systems/.
+Only the GPU-only measurements (`scripts/run_gpu_suite.sh`) remain to be run on a multi-GPU box.
